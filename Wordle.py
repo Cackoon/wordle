@@ -93,7 +93,7 @@ class Wordle:
             self.solved = True
 
 
-    def _get_num_repeated_chars(self, char):
+    def _get_num_repeated_chars(self, char, drop_correct_chars=False):
         # First check if any guess has a grey char. That tells us exactly.
         # Are generators really necessary here? Nah.
         guess_infos = self._get_guess_info_pairs()
@@ -102,10 +102,13 @@ class Wordle:
             return (char_1 == char) and (info == CharacterInfo.WRONG)
 
         def is_right_or_missplaced(char_1, info):
-            info_bool = (
-                (info == CharacterInfo.MISSPLACED) or
-                (info == CharacterInfo.CORRECT)
-            )
+            if drop_correct_chars:
+                info_bool = info == CharacterInfo.MISSPLACED
+            else:
+                info_bool = (
+                    (info == CharacterInfo.MISSPLACED) or
+                    (info == CharacterInfo.CORRECT)
+                )
             return (char_1 == char) and info_bool
 
         grey_rows = (
@@ -141,15 +144,15 @@ class Wordle:
         else:
             return (char_count >= min_num_chars)
         
-    def get_possible_answers(self):
-        # Need to encapsulate and comment this better.
+    def get_possible_answers(self, drop_correct_chars=False):
+        # Need to modularize and comment this better.
         guessed_chars = sorted(list(set(
             e for l in self.guesses for e in l
         )))
 
         # 1. Filter words based on the number of characters.
         repeated_char_nums = [
-            self._get_num_repeated_chars(c)
+            self._get_num_repeated_chars(c, drop_correct_chars)
             for c in guessed_chars
         ]
 
@@ -171,10 +174,17 @@ class Wordle:
             if info == CharacterInfo.CORRECT
         )
 
-        correct_chars_array = np_and(
-            dict_words.view('<U1')[i::len(dict_words[0])] == char
-            for i, char in correct_chars
-        )
+        if drop_correct_chars:
+            correct_chars_array = np_and(
+                dict_words.view('<U1')[i::len(dict_words[0])] != char
+                for i, char in correct_chars
+            )
+        else:
+            correct_chars_array = np_and(
+                dict_words.view('<U1')[i::len(dict_words[0])] == char
+                for i, char in correct_chars
+            )
+            
 
         # 3. Filter words based on wrong characters.
         def is_char_num_zero(char):
@@ -210,6 +220,10 @@ class Wordle:
 
     def make_greedy_guess(self, verbose=False):
         prob_array = self.get_possible_answers()
+        if sum(prob_array > 0) > 2:
+            small_prob_array = self.get_possible_answers(drop_correct_chars=True)
+            if sum(small_prob_array > 0) > 0:
+                prob_array = small_prob_array
         guess = np.random.choice(dict_words, p=prob_array)
         if verbose:
             print('Guessing: {}'.format(guess))
